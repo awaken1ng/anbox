@@ -54,7 +54,7 @@ Window::Window(const std::shared_ptr<Renderer> &renderer,
       native_window_(0) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 1);
 
-  // NOTE: We don't furce GL initialization of the window as this will
+  // NOTE: We don't force GL initialization of the window as this will
   // be take care of by the Renderer when we attach to it. On EGL
   // initializing GL here will cause a surface to be created and the
   // renderer will attempt to create one too which will not work as
@@ -62,6 +62,15 @@ Window::Window(const std::shared_ptr<Renderer> &renderer,
   std::uint32_t flags = SDL_WINDOW_BORDERLESS;
   if (resizable)
     flags |= SDL_WINDOW_RESIZABLE;
+
+  std::string window_to_override = utils::get_env_value("ANBOX_WINDOW_OVERRIDE", "");
+  if (window_to_override != "" && window_to_override == title) {
+    std::string fullscreen = utils::get_env_value("ANBOX_FORCE_FULLSCREEN", "false");
+    if (fullscreen == "exclusive")
+      flags |= SDL_WINDOW_FULLSCREEN;
+    else if (fullscreen == "fake")
+      flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+  }
 
   window_ = SDL_CreateWindow(title.c_str(),
                              frame.left(), frame.top(),
