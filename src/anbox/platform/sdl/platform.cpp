@@ -35,6 +35,9 @@
 namespace anbox {
 namespace platform {
 namespace sdl {
+
+const auto IGNORE_ALT_TAB = utils::get_env_value("ANBOX_IGNORE_ALT_TAB", "false");
+
 Platform::Platform(
     const std::shared_ptr<input::Manager> &input_manager,
     const Configuration &config)
@@ -248,16 +251,26 @@ void Platform::process_input_event(const SDL_Event &event) {
           {EV_REL, REL_WHEEL, static_cast<std::int32_t>(event.wheel.y)});
       break;
     // Keyboard
-    case SDL_KEYDOWN: {
-      const auto code = KeycodeConverter::convert(event.key.keysym.scancode);
-      if (code == KEY_RESERVED) break;
-      keyboard_events.push_back({EV_KEY, code, 1});
-      break;
-    }
+    case SDL_KEYDOWN:
     case SDL_KEYUP: {
       const auto code = KeycodeConverter::convert(event.key.keysym.scancode);
       if (code == KEY_RESERVED) break;
-      keyboard_events.push_back({EV_KEY, code, 0});
+
+      // ignore alt-tab
+      if (IGNORE_ALT_TAB != "false" && code == KEY_TAB && event.key.keysym.mod & KMOD_ALT) {
+        DEBUG("Dropping Alt-Tab");
+        break;
+      }
+
+      if (event.key.repeat) {
+        keyboard_events.push_back({EV_KEY, code, 2});
+      } else if (event.type == SDL_KEYDOWN) {
+        keyboard_events.push_back({EV_KEY, code, 1});
+      } else if (event.type == SDL_KEYUP) {
+        keyboard_events.push_back({EV_KEY, code, 0});
+        keyboard_events.push_back({EV_SYN, SYN_REPORT, 0});
+      }
+
       break;
     }
     // Touch screen
