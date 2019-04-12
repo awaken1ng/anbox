@@ -130,6 +130,30 @@ Platform::Platform(
 
   for (int i = 0; i < MAX_FINGERS; i++)
       touch_slots[i] = -1;
+  
+  // Expected format: `keycode,x,y` delimited by `;`
+  const std::string keybinds_config = utils::get_env_value("ANBOX_KEYBINDS", "");
+  if (keybinds_config.length() > 0) {
+    std::vector<std::string> split_keybinds = utils::string_split(keybinds_config, ';');
+
+    for (std::uint32_t i = 0; i < split_keybinds.size(); ++i) {
+      std::string keybind_config = split_keybinds[i];
+
+      std::vector<std::string> keybind = utils::string_split(keybind_config, ',');
+      if (keybind.size() != 3) {
+        const auto message = utils::string_format("Invalid keybind configuration: %s", keybind_config);
+        BOOST_THROW_EXCEPTION(std::runtime_error(message));
+      }
+      
+      Keybind parsed_keybind;
+      parsed_keybind.keycode = std::stoi(keybind[0]);
+      parsed_keybind.x = std::stoi(keybind[1]);
+      parsed_keybind.y = std::stoi(keybind[2]);
+      keybinds.push_back(parsed_keybind);
+
+      INFO("Parsed keybind: code: %s, x: %s, y: %s", parsed_keybind.keycode, parsed_keybind.x, parsed_keybind.y);
+    }
+  }
 
   event_thread_ = std::thread(&Platform::process_events, this);
 }
@@ -170,8 +194,10 @@ void Platform::process_events() {
           break;
         case SDL_KEYDOWN:
         case SDL_KEYUP:
-          if (keyboard_)
+          if (keyboard_) {
             process_input_event(event);
+            process_keybinds(event);
+          }
           break;
         case SDL_MOUSEMOTION:
         case SDL_MOUSEBUTTONDOWN:
@@ -186,6 +212,52 @@ void Platform::process_events() {
           break;
       }
     }
+  }
+}
+
+void Platform::process_keybinds(const SDL_Event &event) {
+  std::vector<input::Event> touch_events;
+
+  if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
+    const auto code = KeycodeConverter::convert(event.key.keysym.scancode);
+    if (code == KEY_RESERVED) return;
+
+    for (std::uint32_t i = 0; i < keybinds.size(); ++i) {
+      Keybind keybind = keybinds[i];
+      if (keybind.keycode != code) continue;
+
+      if (event.type == SDL_KEYDOWN) {
+        std::int32_t x = keybind.x;
+        std::int32_t y = keybind.y;
+        if (!adjust_coordinates(x, y)) break;
+
+        // touch down
+        touch_events.push_back({EV_ABS, ABS_MT_TRACKING_ID, keybind_touch_id_});
+        touch_events.push_back({EV_ABS, ABS_MT_SLOT, keybind_touch_id_});
+        touch_events.push_back({EV_KEY, BTN_TOUCH, 1});
+        touch_events.push_back({EV_KEY, BTN_TOOL_FINGER, 1});
+
+        touch_events.push_back({EV_ABS, ABS_MT_POSITION_X, x});
+        touch_events.push_back({EV_ABS, ABS_MT_POSITION_Y, y});
+
+        touch_events.push_back({EV_ABS, ABS_MT_TOUCH_MAJOR, 24});
+        touch_events.push_back({EV_ABS, ABS_MT_TOUCH_MINOR, 24});
+  
+        break;
+      } else if (event.type == SDL_KEYUP) {
+        // touch up
+        touch_events.push_back({EV_ABS, ABS_MT_TRACKING_ID, -1});
+        touch_events.push_back({EV_ABS, ABS_MT_SLOT, keybind_touch_id_});
+        touch_events.push_back({EV_KEY, BTN_TOUCH, 0});
+        touch_events.push_back({EV_KEY, BTN_TOOL_FINGER, 0});
+        break;
+      }
+    }
+  }
+
+  if (touch_events.size() > 0) {
+    touch_events.push_back({EV_SYN, SYN_REPORT, 0});
+    touch_->send_events(touch_events);
   }
 }
 

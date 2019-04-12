@@ -39,6 +39,13 @@ class Manager;
 } // namespace wm
 namespace platform {
 namespace sdl {
+
+struct Keybind {
+  int keycode;
+  int x;
+  int y;
+};
+
 class Platform : public std::enable_shared_from_this<Platform>,
                        public platform::BasePlatform,
                        public Window::Observer {
@@ -73,6 +80,10 @@ class Platform : public std::enable_shared_from_this<Platform>,
  private:
   void process_events();
   void process_input_event(const SDL_Event &event);
+
+  void process_keybinds(const SDL_Event &event);
+  static constexpr std::int32_t keybind_touch_id_ = 1;
+  std::vector<Keybind> keybinds;
 
   bool adjust_coordinates(std::int32_t &x, std::int32_t &y);
   bool adjust_coordinates(SDL_Window *window, std::int32_t &x, std::int32_t &y);
